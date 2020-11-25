@@ -38,7 +38,22 @@ scopes = {
     'td': vaex.expression.TimeDelta
 }
 
-def register_function(scope=None, as_property=False, name=None, on_expression=True, df_accessor=None):
+_pool = None
+def _get_pool():
+    global _pool
+    if _pool is None:
+        from multiprocessing import Pool
+        _pool = Pool(20)
+    return _pool
+
+
+def _call(f, args, kwargs, multiprocessing):
+    if multiprocessing:
+        return _get_pool().apply(f, args, kwargs)
+    else:
+        return f(*args, **kwargs)
+
+def register_function(scope=None, as_property=False, name=None, on_expression=True, df_accessor=None, multiprocessing=False):
     """Decorator to register a new function with vaex.
 
     If on_expression is True, the function will be available as a method on an
@@ -79,7 +94,7 @@ def register_function(scope=None, as_property=False, name=None, on_expression=Tr
                 def wrapper(self, *args, **kwargs):
                     lazy_func = getattr(self.df.func, full_name)
                     lazy_func = vaex.arrow.numpy_dispatch.autowrapper(lazy_func)
-                    return lazy_func(*args, **kwargs)
+                    return _call(lazy_func, args, kwargs, multiprocessing)
                 return functools.wraps(function)(wrapper)
             if as_property:
                 setattr(df_accessor, name, property(closure()))
@@ -93,7 +108,7 @@ def register_function(scope=None, as_property=False, name=None, on_expression=Tr
                             lazy_func = getattr(self.expression.ds.func, full_name)
                             lazy_func = vaex.arrow.numpy_dispatch.autowrapper(lazy_func)
                             args = (self.expression, ) + args
-                            return lazy_func(*args, **kwargs)
+                            return _call(lazy_func, args, kwargs, multiprocessing)
                         return functools.wraps(function)(wrapper)
                     if as_property:
                         setattr(scopes[scope], name, property(closure()))
@@ -104,8 +119,8 @@ def register_function(scope=None, as_property=False, name=None, on_expression=Tr
                         def wrapper(self, *args, **kwargs):
                             lazy_func = getattr(self.ds.func, full_name)
                             lazy_func = vaex.arrow.numpy_dispatch.autowrapper(lazy_func)
-                            args = (self, ) + args
-                            return lazy_func(*args, **kwargs)
+                            args = (self,) + args
+                            return _call(lazy_func, args, kwargs, multiprocessing=multiprocessing)
                         return functools.wraps(function)(wrapper)
                     setattr(vaex.expression.Expression, name, closure())
         vaex.expression.expression_namespace[prefix + name] = vaex.arrow.numpy_dispatch.autowrapper(f)

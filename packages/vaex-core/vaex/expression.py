@@ -823,7 +823,7 @@ def f({0}):
             var = self.df.add_variable('isin_values', values, unique=True)
             return self.df['isin(%s, %s)' % (self, var)]
 
-    def apply(self, f):
+    def apply(self, f, vectorize=False):
         """Apply a function along all values of an Expression.
 
         Example:
@@ -856,7 +856,7 @@ def f({0}):
         :param f: A function to be applied on the Expression values
         :returns: A function that is lazily evaluated when called.
         """
-        return self.ds.apply(f, [self.expression])
+        return self.ds.apply(f, [self.expression,], vectorize=vectorize)
 
     def dropmissing(self):
         # TODO: df.dropna does not support inplace
@@ -1013,8 +1013,9 @@ class FunctionSerializable(object):
 
 @vaex.serialize.register
 class FunctionSerializablePickle(FunctionSerializable):
-    def __init__(self, f=None):
+    def __init__(self, f=None, multiprocessing=False):
         self.f = f
+        self.multiprocessing = multiprocessing
 
     def pickle(self, function):
         return pickle.dumps(function)
@@ -1161,6 +1162,9 @@ def f({0}):
 @vaex.serialize.register
 class FunctionToScalar(FunctionSerializablePickle):
     def __call__(self, *args, **kwargs):
+        vaex.functions._call(self._apply, args, kwargs, self.multiprocessing)
+
+    def _apply(self, *args, **kwargs):
         length = len(args[0])
         result = []
         def fix_type(v):
